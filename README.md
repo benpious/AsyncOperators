@@ -22,7 +22,7 @@ let sequence = source
 You then get results from the sequence using Structured Concurrency's equivalent of 
 `subscribe`:
 ```
-subscription = Task.detached {
+subscription = Task {
     for try await (a, b) in sequence {
         print(a, b)
     }
