@@ -1,5 +1,8 @@
 /// A async sequence that appends a new value after some time passes.
 ///
+/// This sequence is "cold" in the sense that it does not start working
+/// until you start enumerating it. 
+///
 /// - Note: this sequence never terminates.
 public struct Poll: AsyncSequence {
     
@@ -26,8 +29,8 @@ public struct Poll: AsyncSequence {
     
     let duration: UInt64
     
-    public init(milliseconds: UInt64) {
-        self.duration = milliseconds * 1000
+    public init(nanoseconds: UInt64) {
+        self.duration = nanoseconds
     }
     
 }

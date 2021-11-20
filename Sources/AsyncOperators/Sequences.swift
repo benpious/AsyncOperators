@@ -1,5 +1,3 @@
-import Foundation
-
 public struct DistinctUntilChanged<T>: AsyncSequence where T: AsyncSequence, T.Element: Equatable {
     
     public typealias AsyncIterator = Iterator
@@ -45,13 +43,17 @@ public struct Timeout<A>: AsyncSequence where A: AsyncSequence {
             base: A,
             timeout: Task<Void, Never>
         ) {
-            stream = AsyncStream { continuation in
-                Task.detached {
-                    for try await value in base {
-                        continuation.yield(.b(value))
+            stream = AsyncThrowingStream { continuation in
+                Task {
+                    do {
+                        for try await value in base {
+                            continuation.yield(.b(value))
+                        }
+                    } catch {
+                        continuation.finish(throwing: error)
                     }
                 }
-                Task.detached {
+                Task {
                     await timeout.value
                     continuation.yield(.a(()))
                 }
@@ -60,7 +62,7 @@ public struct Timeout<A>: AsyncSequence where A: AsyncSequence {
             self.timeout = timeout
         }
         
-        fileprivate let stream: AsyncStream<Either<Void, Element>>
+        fileprivate let stream: AsyncThrowingStream<Either<Void, Element>, Swift.Error>
         private var gotValue = false
         fileprivate var base: A
         fileprivate let timeout: Task<Void, Never>
@@ -224,7 +226,7 @@ public struct Throttle<Base>: AsyncSequence where Base: AsyncSequence {
     
     init(
         base: Base,
-        interval: TimeInterval
+        interval: UInt64
     ) {
         self.base = base
         self.interval = interval
@@ -245,28 +247,26 @@ public struct Throttle<Base>: AsyncSequence where Base: AsyncSequence {
         
         init(
             base: Base.AsyncIterator,
-            interval: TimeInterval
+            interval: UInt64
         ) {
             self.base = base
             self.interval = interval
         }
         
         var base: Base.AsyncIterator
-        private var lastSent: TimeInterval?
-        private let interval: TimeInterval
+        private var lastSent: UInt64?
+        private let interval: UInt64
         
         public mutating func next() async throws -> Element? {
-            let next = try await base.next()
-            let date = Date().timeIntervalSinceReferenceDate * 1_000
             if let lastSent = lastSent {
-                if date - lastSent <= interval {
-                    self.lastSent = date
-                    return next
-                } else {
-                    return nil
+                var last = try await base.next()
+                while time() - lastSent < interval {
+                    last = try await base.next()
                 }
+                return last
             } else {
-                lastSent = date
+                let next = try await base.next()
+                lastSent = time()
                 return next
             }
         }
@@ -274,7 +274,7 @@ public struct Throttle<Base>: AsyncSequence where Base: AsyncSequence {
     }
     
     private let base: Base
-    private let interval: TimeInterval
+    private let interval: UInt64
     
 }
 
@@ -287,7 +287,8 @@ public struct DelayedSequence<Base>: AsyncSequence where Base: AsyncSequence {
     let duration: UInt64
     
     public func makeAsyncIterator() -> Iterator {
-        .init(base: base.makeAsyncIterator(), duration: duration * 1000)
+        .init(base: base.makeAsyncIterator(),
+              duration: duration * 1000)
     }
     
     public struct Iterator: AsyncIteratorProtocol {
@@ -296,6 +297,7 @@ public struct DelayedSequence<Base>: AsyncSequence where Base: AsyncSequence {
         let duration: UInt64
         
         public mutating func next() async throws -> Element? {
+            
             let next = try await base.next()
             await Task.sleep(duration)
             return next

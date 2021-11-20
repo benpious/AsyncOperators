@@ -3,11 +3,11 @@ import XCTest
 
 final class AsyncOperatorsTests: XCTestCase {
     
-    func test_throttle() async throws {
-        let poll = AsyncArray(0, 1, 2, 3)
+    func test_debounce() async throws {
+        let poll = AsyncArray(0, 1, 2, 3, 4)
             .delayElements(byMilliseconds: 20)
-            .throttle(milliseconds: 50)
-            .prefix(5)
+            .debounce(milliseconds: 30)
+            .terminate(afterMilliseconds: 100_000)
         for try await result in poll {
             print(result)
         }
