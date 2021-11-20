@@ -10,6 +10,16 @@ public extension AsyncSequence {
         Timeout(self, time: milliseconds)
     }
     
+    /// Appends elements to the sequence only when the last value in `other` is `true`.
+    func gated<Other>(
+        by other: Other
+    ) -> AsyncFilterSequence<AsyncCompactMapSequence<AsyncThrowingStream<Either<Self.Element, Bool>, Error>, (Self.Element, Bool)>>
+    where Other: AsyncSequence, Other.Element == Bool {
+        withLatestFrom(other: other).filter { element, shouldAppend in
+            shouldAppend
+        }
+    }
+    
     /// Terminates the sequence after the specified time interval.
     ///
     /// Unlike `timeout`, this does not throw an error.
