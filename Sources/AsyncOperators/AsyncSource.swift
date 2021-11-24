@@ -12,53 +12,54 @@ public final class AsyncSource<Element>: AsyncSequence {
     
     /// The element represented by the callee.
     ///
-    /// Set this to cause a new value to be added to the callee's sequence. 
+    /// Set this to cause a new value to be added to the callee's sequence.
     public var value: Element? = nil {
         didSet {
-            var index = 0
-            while index < observers.count {
-                let observer = observers[index]
-                if let observer = observer.iterator {
-                    observer.value = value
-                    index += 1
-                } else {
-                    observers.remove(at: index)
+            if let value = value {
+                for observer in observers {
+                    observer.continuation.yield(value)
                 }
             }
         }
     }
     
-    public typealias AsyncIterator = Iterator
-    
     public typealias Element = Element
     
-    private var observers: [WeakRef] = []
+    private var observers: [Observer] = []
     
-    private struct WeakRef {
-        weak var iterator: Iterator?
+    private struct Observer {
+        var continuation: AsyncThrowingStream<Element, Error>.Continuation
     }
     
-    public func makeAsyncIterator() -> Iterator {
-        let iterator = Iterator()
-        observers.append(.init(iterator: iterator))
-        iterator.value = value
-        return iterator
-    }
-    
-    public final class Iterator: AsyncIteratorProtocol {
-        
-        var value: Element?
-        
-        public func next() async throws -> Element? {
-            while value == nil {
-                
+    public func makeAsyncIterator() -> AsyncThrowingStream<Element, Error>.AsyncIterator {
+        AsyncThrowingStream<Element, Error> { continuation in
+            self.observers.append(.init(continuation: continuation))
+            if let value = value {
+                continuation.yield(value)
             }
-            defer {
-                value = nil
-            }
-            return value
         }
+        .makeAsyncIterator()
+    }
         
+}
+
+@propertyWrapper
+public struct Streaming<Wrapped> {
+    
+    public init(wrappedValue: Wrapped) {
+        self.wrappedValue = wrappedValue
+    }
+    
+    let source = AsyncSource<Wrapped>(nil)
+    
+    public var wrappedValue: Wrapped {
+        didSet {
+            source.value = wrappedValue
+        }
+    }
+    
+    public var projectedValue: AsyncSource<Wrapped> {
+        source
     }
     
 }
