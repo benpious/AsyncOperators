@@ -53,13 +53,7 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
     
     /// Requests the next page using the last page token recieved, if applicable.
     public func requestNextPage() {
-        Task {
-            if paginationToken.value != paginationTokenSink.value {
-                paginationToken.value = paginationTokenSink.value
-            } else {
-                paginationToken.value = await paginationTokenSink.next
-            }
-        }
+        requestSink.onNext()
     }
     
     public typealias AsyncIterator = Iterator
@@ -69,12 +63,16 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
     var getter: (Element.PageToken?) async throws -> Element?
     
     private let paginationToken: AsyncSource<Element.PageToken?> = .init()
-    private let paginationTokenSink: AsyncSource<Element.PageToken> = .init()
+    private let requestSink: AsyncSource<()> = .init()
             
     public func makeAsyncIterator() -> Iterator {
         Iterator(
             paginationToken: paginationToken,
-            paginationTokenSink: paginationTokenSink,
+            requestSink: requestSink
+                .withLatestFrom(other: paginationToken)
+                .startsWith(((), nil))
+                .map({ $0.1 })
+                .makeAsyncIterator(),
             getter: getter
         )
     }
@@ -83,16 +81,14 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
         
         
         var paginationToken: AsyncSource<Element.PageToken?>
-        let paginationTokenSink: AsyncSource<Element.PageToken>
+        var requestSink: AsyncMapSequence<StartsWith<AsyncCompactMapSequence<AsyncThrowingStream<Either<AsyncSource<()>.Element, AsyncSource<Element.PageToken?>.Element>, Error>, (AsyncSource<()>.Element, AsyncSource<Element.PageToken?>.Element)>>, AsyncSource<Element.PageToken?>.Element>.Iterator
         var getter: (Element.PageToken?) async throws -> Element?
         var prior: Element?
         var hasSent = false
         
         public mutating func next() async throws -> Element? {
             if hasSent {
-                for await token in paginationToken {
-                    print("token: ", token as Any)
-                    paginationTokenSink.value = token
+                while let token = try await requestSink.next() {
                     if let nextPartial = try await getter(token) {
                         let next: Element
                         if let prior = prior {
@@ -100,6 +96,7 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
                         } else {
                             next = nextPartial
                         }
+                        paginationToken.value = next.paginationToken
                         self.prior = next
                         return next
                     } else {

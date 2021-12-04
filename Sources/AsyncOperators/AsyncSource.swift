@@ -96,3 +96,11 @@ public struct Streaming<Wrapped> {
     }
     
 }
+
+public extension AsyncSource where Element == Void {
+    
+    func onNext() {
+        value = ()
+    }
+    
+}

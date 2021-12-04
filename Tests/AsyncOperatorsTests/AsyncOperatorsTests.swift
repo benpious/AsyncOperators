@@ -19,8 +19,8 @@ final class AsyncOperatorsTests: XCTestCase {
         }
         let source = AsyncSource(
             Response(
-                data: [0],
-                paginationToken: 1
+                data: [],
+                paginationToken: 0
             )
         )
         let pagination = Pagination<Response> { token in
@@ -28,11 +28,11 @@ final class AsyncOperatorsTests: XCTestCase {
             return await iterator.next()
         }
         for try await next in pagination.prefix(10) {
-            pagination.requestNextPage()
             source.value = .init(
                 data: [next.paginationToken],
                 paginationToken: next.data.count
             )
+            pagination.requestNextPage()
             print(next)
         }
     }
