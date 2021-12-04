@@ -5,6 +5,7 @@ import SwiftUI
 final class AsyncOperatorsTests: XCTestCase {
     
     func test_pagination() async throws {
+        // TODO: write a real test
         struct Response: Paginated {
             
             var data: [Int]
@@ -38,6 +39,7 @@ final class AsyncOperatorsTests: XCTestCase {
     }
     
     func test_debounce() async throws {
+        // TODO: write a real test
         let poll = AsyncArray(0, 1, 2, 3, 4)
             .delayElements(byMilliseconds: 20)
             .debounce(milliseconds: 30)

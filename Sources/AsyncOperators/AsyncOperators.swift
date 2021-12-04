@@ -30,11 +30,12 @@ public extension AsyncSequence {
     /// Appends elements to the sequence only when the last value in `other` is `true`.
     func gated<Other>(
         by other: Other
-    ) -> AsyncFilterSequence<AsyncCompactMapSequence<AsyncThrowingStream<Either<Self.Element, Bool>, Error>, (Self.Element, Bool)>>
+    ) -> GatedBySequence<Element, Other>
     where Other: AsyncSequence, Other.Element == Bool {
-        withLatestFrom(other: other).filter { element, shouldAppend in
-            shouldAppend
-        }
+        withLatestFrom(other: other)
+            .filter { element, shouldAppend in
+                shouldAppend
+            }
     }
     
     /// Terminates the sequence after the specified time interval.
@@ -89,7 +90,7 @@ public extension AsyncSequence {
     /// appended by `other`.
     func withLatestFrom<Other>(
         other: Other
-    ) -> AsyncCompactMapSequence<AsyncThrowingStream<Either<Self.Element, Other.Element>, Error>, (Self.Element, Other.Element)>
+    ) -> WithLatestFromSequence<Element, Other>
     where Other: AsyncSequence {
         var lastOther: Other.Element?
         return concurrently(self, other)
@@ -112,7 +113,7 @@ public extension AsyncSequence {
     /// specified by `milliseconds`.
     func debounce(
         milliseconds: UInt64
-    ) -> AsyncCompactMapSequence<AsyncThrowingStream<Either<Poll.Element, Self.Element>, Error>, Self.Element> {
+    ) -> DebounceSequence<Element> {
         var lastMine: Element?
         return concurrently(Poll(nanoseconds: milliseconds * 1000), self)
             .compactMap { next -> Element? in
@@ -141,9 +142,13 @@ public extension AsyncSequence {
     func delayElements(byMilliseconds milliseconds: UInt64) -> DelayedSequence<Self> {
         .init(base: self, duration: milliseconds)
     }
-    
-    typealias CombineLatestSequence<Element, Other> = AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Other.Element>, Error>, (Element, Other.Element)> where Other: AsyncSequence
-        
+            
 }
 
+public typealias CombineLatestSequence<Element, Other> = AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Other.Element>, Error>, (Element, Other.Element)> where Other: AsyncSequence
 
+public typealias DebounceSequence<Element> = AsyncCompactMapSequence<AsyncThrowingStream<Either<Poll.Element, Element>, Error>, Element>
+
+public typealias WithLatestFromSequence<Element, Other> = AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Other.Element>, Error>, (Element, Other.Element)> where Other: AsyncSequence
+
+public typealias GatedBySequence<Element, Other> = AsyncFilterSequence<AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Bool>, Error>, (Element, Bool)>> where Other: AsyncSequence, Other.Element == Bool
