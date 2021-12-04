@@ -1,52 +1,120 @@
-/// A type that can be paginated.
-///
-/// Typically the result of a network request.
+//
+//  Copyright (c) 2021. Ben Pious
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+
+/// An object (typically a network response) that represents just one
+/// "page" of an overall result.
 public protocol Paginated {
     
-    /// Represents context used to generate the next element in the sequence. 
-    associatedtype PaginationToken
+    associatedtype PageToken: Equatable
     
-    /// The token showing what the next values should be.
-    var paginationToken: PaginationToken { get }
+    /// The property that is used to retrieve the next page of results.
+    /// Might be an offset into the value elsewhere.
+    var paginationToken: PageToken { get }
+
+    /// Called when the next result is recieved by a `Pagination`.
+    ///
+    /// The callee is the prior result, and `nextResult` is the current result.
+    ///
+    ///The return value should typically include the data from the prior result,
+    ///
+    /// For an array, a correct implementation of this function would
+    /// be `self + nextResult`
+    func reduce(nextResult: Self) -> Self
     
 }
 
 /// Represents a series of values which are paginated, in other words:
 ///  the output of the prior value is fed forwards to generate the next value.
-public struct Pagination<T>: AsyncSequence where T: Paginated {
+public struct Pagination<Element>: AsyncSequence where Element: Paginated {
+    
+    /// Initializer.
+    ///
+    /// - parameter getter: given the next page token (if available), returns
+    /// the next element.
+    public init(
+        getter: @escaping (Element.PageToken?) async throws -> Element?
+    ) {
+        self.getter = getter
+    }
+    
+    /// Requests the next page using the last page token recieved, if applicable.
+    public func requestNextPage() {
+        Task {
+            if paginationToken.value != paginationTokenSink.value {
+                paginationToken.value = paginationTokenSink.value
+            } else {
+                paginationToken.value = await paginationTokenSink.next
+            }
+        }
+    }
     
     public typealias AsyncIterator = Iterator
     
-    public typealias Element = T
+    public typealias Element = Element
     
-    var getter: (T.PaginationToken?) async throws -> T?
-        
+    var getter: (Element.PageToken?) async throws -> Element?
+    
+    private let paginationToken: AsyncSource<Element.PageToken?> = .init()
+    private let paginationTokenSink: AsyncSource<Element.PageToken> = .init()
+            
     public func makeAsyncIterator() -> Iterator {
-        Iterator(getter: getter)
+        Iterator(
+            paginationToken: paginationToken,
+            paginationTokenSink: paginationTokenSink,
+            getter: getter
+        )
     }
     
     public struct Iterator: AsyncIteratorProtocol {
         
-        var paginationToken: AsyncSource<T.PaginationToken> = .init()
-        var getter: (T.PaginationToken?) async throws -> T?
-        var hasSentOnce = false
         
-        public func next() async throws -> T? {
-            if hasSentOnce {
-                for try await token in paginationToken {
-                    let result = try await getter(token)
-                    paginationToken.value = result?.paginationToken
-                    return result
+        var paginationToken: AsyncSource<Element.PageToken?>
+        let paginationTokenSink: AsyncSource<Element.PageToken>
+        var getter: (Element.PageToken?) async throws -> Element?
+        var prior: Element?
+        var hasSent = false
+        
+        public mutating func next() async throws -> Element? {
+            if hasSent {
+                for await token in paginationToken {
+                    print("token: ", token as Any)
+                    paginationTokenSink.value = token
+                    if let nextPartial = try await getter(token) {
+                        let next: Element
+                        if let prior = prior {
+                            next = prior.reduce(nextResult: nextPartial)
+                        } else {
+                            next = nextPartial
+                        }
+                        self.prior = next
+                        return next
+                    } else {
+                        return nil
+                    }
                 }
                 return nil
             } else {
-                let result = try await getter(nil)
-                paginationToken.value = result?.paginationToken
-                return result
+                hasSent = true
+                let next = try await getter(nil)
+                prior = next
+                return next
             }
         }
         
     }
     
 }
-

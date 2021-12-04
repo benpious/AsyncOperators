@@ -1,7 +1,41 @@
 import XCTest
 @testable import AsyncOperators
+import SwiftUI
 
 final class AsyncOperatorsTests: XCTestCase {
+    
+    func test_pagination() async throws {
+        struct Response: Paginated {
+            
+            var data: [Int]
+            var paginationToken: Int
+            
+            func reduce(nextResult: Response) -> Response {
+                var new = nextResult
+                new.data = data + new.data
+                return new
+            }
+            
+        }
+        let source = AsyncSource(
+            Response(
+                data: [0],
+                paginationToken: 1
+            )
+        )
+        let pagination = Pagination<Response> { token in
+            var iterator = source.makeAsyncIterator()
+            return await iterator.next()
+        }
+        for try await next in pagination.prefix(10) {
+            pagination.requestNextPage()
+            source.value = .init(
+                data: [next.paginationToken],
+                paginationToken: next.data.count
+            )
+            print(next)
+        }
+    }
     
     func test_debounce() async throws {
         let poll = AsyncArray(0, 1, 2, 3, 4)
@@ -50,6 +84,7 @@ final class AsyncOperatorsTests: XCTestCase {
             for try await _ in source {
                 
             }
+            XCTFail("No error emitted")
         } catch {
             gotError = true
         }
