@@ -18,7 +18,7 @@
 ///
 /// Whenever `value` is set, a new element is appended to the sequence.
 ///
-/// - Note: This sequence never completes.
+/// This sequence completes when the AsyncSource is deallocated.
 public final class AsyncSource<Element>: AsyncSequence {
     
     /// Initializer.
@@ -32,42 +32,74 @@ public final class AsyncSource<Element>: AsyncSequence {
     public var value: Element? = nil {
         didSet {
             if let value = value {
-                for observer in singleObservers {
-                    observer.resume(returning: value)
-                }
-                singleObservers = []
-                for observer in observers {
-                    observer.continuation.yield(value)
+                var i = 0
+                while i < observers.count {
+                    let observer = observers[i]
+                    if observer.marker == nil {
+                        observers.remove(at: i)
+                    } else {
+                        observer.continuation.yield(value)
+                        i += 1
+                    }
                 }
             }
         }
     }
-    
-    var next: Element {
-        get async {
-            await withCheckedContinuation { continuation in
-                singleObservers.append(continuation)
-            }
-        }
-    }
-    
-    public typealias Element = Element
-    
+            
     private var observers: [Observer] = []
-    private var singleObservers: [CheckedContinuation<Element, Never>] = []
         
     private struct Observer {
+        
         var continuation: AsyncStream<Element>.Continuation
+        weak var marker: Marker?
+        
     }
     
-    public func makeAsyncIterator() -> AsyncStream<Element>.AsyncIterator {
-        AsyncStream<Element> { continuation in
-            self.observers.append(.init(continuation: continuation))
-            if let value = value {
-                continuation.yield(value)
-            }
+    fileprivate class Marker {
+        
+    }
+    
+    public func makeAsyncIterator() -> IteratorWrapper<AsyncStream<Element>.AsyncIterator> {
+        let marker = Marker()
+        return IteratorWrapper(
+            marker: marker,
+            base:
+                AsyncStream<Element> { continuation in
+                    observers.append(.init(
+                        continuation: continuation,
+                        marker: marker
+                        )
+                    )
+                    if let value = value {
+                        continuation.yield(value)
+                    }
+                }
+                .makeAsyncIterator()
+        )
+    }
+
+    public struct IteratorWrapper<Base>: AsyncIteratorProtocol where Base: AsyncIteratorProtocol, Base.Element == Element {
+                
+        fileprivate var marker: Marker
+        
+        var base: Base
+        
+        var isDead: Bool {
+            var marker = self.marker
+            return isKnownUniquelyReferenced(&marker)
         }
-        .makeAsyncIterator()
+        
+        public mutating func next() async rethrows -> Element? {
+            try await base.next()
+        }
+        
+    }
+    
+    
+    deinit {
+        for observer in observers {
+            observer.continuation.finish()
+        }
     }
     
 }
