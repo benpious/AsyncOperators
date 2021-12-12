@@ -21,7 +21,14 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "AsyncOperators",
-            dependencies: []),
+            dependencies: [],
+            swiftSettings: [
+                .unsafeFlags([
+                    "-Xfrontend",
+                    "-warn-concurrency",
+                    "-Xfrontend",
+                    "-enable-actor-data-race-checks"
+                ])]),
         .testTarget(
             name: "AsyncOperatorsTests",
             dependencies: ["AsyncOperators"]),

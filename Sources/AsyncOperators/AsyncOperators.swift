@@ -18,24 +18,26 @@
 public extension AsyncSequence {
     
     /// Prepends a value to the callee.
-    func startsWith(_ start: Element) -> StartsWith<Self> {
+    func startsWith(_ start: Element) -> StartsWith<Self> where Self: Sendable {
         StartsWith(start: start, sequence: self)
     }
     
     /// Throws an error if a value is not appended before the timeout.
-    func timeout(after milliseconds: UInt64) -> Timeout<Self> {
+    func timeout(after milliseconds: UInt64) -> Timeout<Self> where Self: Sendable {
         Timeout(self, time: milliseconds)
     }
     
     /// Appends elements to the sequence only when the last value in `other` is `true`.
     func gated<Other>(
         by other: Other
-    ) -> GatedBySequence<Element, Other>
-    where Other: AsyncSequence, Other.Element == Bool {
-        withLatestFrom(other: other)
-            .filter { element, shouldAppend in
-                shouldAppend
-            }
+    ) -> GatedBySequence<Element>
+    where Other: AsyncSequence & Sendable,
+            Self: Sendable,
+            Other.Element == Bool {
+               withLatestFrom(other: other)
+                    .filter { (pair: Pair<Self.Element, Bool>) -> Bool in
+                        pair.b
+                    }
     }
     
     /// Terminates the sequence after the specified time interval.
@@ -43,7 +45,8 @@ public extension AsyncSequence {
     /// Unlike `timeout`, this does not throw an error.
     func terminate(
         afterMilliseconds milliseconds: UInt64
-    ) -> AsyncThrowingStream<Self.Element, Error> {
+    ) -> AsyncThrowingStream<Self.Element, Error>
+    where Self: Sendable {
         AsyncThrowingStream<Element, Error> { continuation in
             let task = Task {
                 for try await value in self {
@@ -67,7 +70,7 @@ public extension AsyncSequence {
     func combineWithLatest<Other>(
         from other: Other
     ) -> CombineLatestSequence<Element, Other>
-    where Other: AsyncSequence {
+    where Other: AsyncSequence & Sendable, Self: Sendable {
         var lastA: Element?
         var lastB: Other.Element?
         return concurrently(self, other)
@@ -91,14 +94,14 @@ public extension AsyncSequence {
     func withLatestFrom<Other>(
         other: Other
     ) -> WithLatestFromSequence<Element, Other>
-    where Other: AsyncSequence {
+    where Other: AsyncSequence & Sendable, Self: Sendable {
         var lastOther: Other.Element?
         return concurrently(self, other)
-            .compactMap { next -> (Element, Other.Element)? in
+            .compactMap { next -> Pair<Element, Other.Element>? in
                 switch next {
                 case .a(let mine):
                     if let lastOther = lastOther {
-                        return (mine, lastOther)
+                        return .init(mine, lastOther)
                     } else {
                         return nil
                     }
@@ -113,7 +116,7 @@ public extension AsyncSequence {
     /// specified by `milliseconds`.
     func debounce(
         milliseconds: UInt64
-    ) -> DebounceSequence<Element> {
+    ) -> DebounceSequence<Element> where Self: Sendable {
         var lastMine: Element?
         return concurrently(Poll(nanoseconds: milliseconds * 1000), self)
             .compactMap { next -> Element? in
@@ -149,6 +152,25 @@ public typealias CombineLatestSequence<Element, Other> = AsyncCompactMapSequence
 
 public typealias DebounceSequence<Element> = AsyncCompactMapSequence<AsyncThrowingStream<Either<Poll.Element, Element>, Error>, Element>
 
-public typealias WithLatestFromSequence<Element, Other> = AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Other.Element>, Error>, (Element, Other.Element)> where Other: AsyncSequence
+public typealias WithLatestFromSequence<Element, Other> = AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Other.Element>, Error>, Pair<Element, Other.Element>> where Other: AsyncSequence
 
-public typealias GatedBySequence<Element, Other> = AsyncFilterSequence<AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Bool>, Error>, (Element, Bool)>> where Other: AsyncSequence, Other.Element == Bool
+public typealias GatedBySequence<Element> = AsyncFilterSequence<AsyncCompactMapSequence<AsyncThrowingStream<Either<Element, Bool>, Error>, Pair<Element, Bool>>>
+
+extension DebounceSequence: @unchecked Sendable where Element: Sendable {
+    
+}
+
+public struct Pair<A, B> {
+    
+    init(_ a: A, _ b: B) {
+        self.a = a
+        self.b = b
+    }
+    
+    var a: A
+    var b: B
+}
+
+extension Pair: Sendable where A: Sendable, B: Sendable {
+    
+}

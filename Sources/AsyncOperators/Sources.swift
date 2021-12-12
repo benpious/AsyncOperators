@@ -40,7 +40,7 @@ public struct AsyncSequenceOfOne<Element, Error>: AsyncSequence where Error: Swi
 }
 
 /// A sequence with one element: an error.
-public struct JustError<Element, Error>: AsyncSequence where Error: Swift.Error {
+public struct JustError<Element, Error>: Sendable, AsyncSequence where Error: Swift.Error {
     
     public init(_ error: Error) {
         self.error = error
@@ -65,7 +65,7 @@ public struct JustError<Element, Error>: AsyncSequence where Error: Swift.Error 
 }
 
 /// A sequence of one value: an `Element` or `Error`.
-public struct Just<Element>: AsyncSequence {
+public struct Just<Element>: Sendable, AsyncSequence where Element: Sendable {
     
     init(_ value: Element) {
         self.value = value

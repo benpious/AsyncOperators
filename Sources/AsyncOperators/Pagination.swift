@@ -19,7 +19,7 @@
 /// "page" of an overall result.
 public protocol Paginated {
     
-    associatedtype PageToken: Equatable
+    associatedtype PageToken: Equatable, Sendable
     
     /// The property that is used to retrieve the next page of results.
     /// Might be an offset into the value elsewhere.
@@ -39,7 +39,7 @@ public protocol Paginated {
 
 /// Represents a series of values which are paginated, in other words:
 ///  the output of the prior value is fed forwards to generate the next value.
-public struct Pagination<Element>: AsyncSequence where Element: Paginated {
+public struct Pagination<Element>: AsyncSequence where Element: Paginated, Element: Sendable {
     
     /// Initializer.
     ///
@@ -53,7 +53,7 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
     
     /// Requests the next page using the last page token recieved, if applicable.
     public func requestNextPage() {
-        requestSink.onNext()
+        requestSink.value = .init()
     }
     
     public typealias AsyncIterator = Iterator
@@ -63,15 +63,15 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
     var getter: (Element.PageToken?) async throws -> Element?
     
     private let paginationToken: AsyncSource<Element.PageToken?> = .init()
-    private let requestSink: AsyncSource<()> = .init()
+    private let requestSink: AsyncSource<Empty> = .init()
             
     public func makeAsyncIterator() -> Iterator {
         Iterator(
             paginationToken: paginationToken,
             requestSink: requestSink
                 .withLatestFrom(other: paginationToken)
-                .startsWith(((), nil))
-                .map({ $0.1 })
+                .startsWith(.init(.init(), nil))
+                .map({ $0.b })
                 .makeAsyncIterator(),
             getter: getter
         )
@@ -81,7 +81,7 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
         
         
         var paginationToken: AsyncSource<Element.PageToken?>
-        var requestSink: AsyncMapSequence<StartsWith<AsyncCompactMapSequence<AsyncThrowingStream<Either<AsyncSource<()>.Element, AsyncSource<Element.PageToken?>.Element>, Error>, (AsyncSource<()>.Element, AsyncSource<Element.PageToken?>.Element)>>, AsyncSource<Element.PageToken?>.Element>.Iterator
+        var requestSink: AsyncMapSequence<StartsWith<AsyncCompactMapSequence<AsyncThrowingStream<Either<Empty, AsyncSource<Element.PageToken?>.Element>, Error>, Pair<Empty, AsyncSource<Element.PageToken?>.Element>>>, AsyncSource<Element.PageToken?>.Element>.Iterator
         var getter: (Element.PageToken?) async throws -> Element?
         var prior: Element?
         var hasSent = false
@@ -113,5 +113,9 @@ public struct Pagination<Element>: AsyncSequence where Element: Paginated {
         }
         
     }
+    
+}
+
+struct Empty: Sendable {
     
 }

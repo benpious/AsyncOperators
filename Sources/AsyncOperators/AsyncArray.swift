@@ -20,7 +20,7 @@
 /// This is very useful for testing. 
 public struct AsyncArray<Element>: AsyncSequence {
     
-    var base: [Element]
+    let base: [Element]
     
     /// Initializer.
     public init(_ base: [Element]) {
@@ -47,3 +47,8 @@ public struct AsyncArray<Element>: AsyncSequence {
     }
     
 }
+
+extension AsyncArray: Sendable where Element: Sendable {
+    
+}
+

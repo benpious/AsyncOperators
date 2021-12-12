@@ -48,7 +48,7 @@ public struct DistinctUntilChanged<T>: AsyncSequence where T: AsyncSequence, T.E
     
 }
 
-public struct Timeout<A>: AsyncSequence where A: AsyncSequence {
+public struct Timeout<A>: AsyncSequence where A: AsyncSequence, A: Sendable {
     
     public typealias Element = A.Element
     
@@ -120,19 +120,19 @@ public struct Timeout<A>: AsyncSequence where A: AsyncSequence {
     }
 }
 
-public struct StartsWith<A>: AsyncSequence where A: AsyncSequence {
+public struct StartsWith<Base>: Sendable, AsyncSequence where Base: AsyncSequence & Sendable, Base.Element: Sendable {
 
-    public typealias Element = A.Element
+    public typealias Element = Base.Element
 
     public typealias AsyncIterator = Iterator
 
     public struct Iterator: AsyncIteratorProtocol {
 
-        fileprivate let start: A.Element
+        fileprivate let start: Base.Element
         fileprivate var hasStarted = false
-        fileprivate var iterator: A.AsyncIterator
+        fileprivate var iterator: Base.AsyncIterator
 
-        public mutating func next() async throws -> A.Element? {
+        public mutating func next() async throws -> Base.Element? {
             if hasStarted == false {
                 hasStarted = true
                 return start
@@ -147,9 +147,9 @@ public struct StartsWith<A>: AsyncSequence where A: AsyncSequence {
         Iterator(start: start, iterator: sequence.makeAsyncIterator())
     }
 
-    let start: A.Element
+    let start: Base.Element
 
-    let sequence: A
+    let sequence: Base
 
 }
 
@@ -167,7 +167,7 @@ public enum Either<A, B> {
     case b(B)
 }
 
-public struct CombineLatest1<A, B>: AsyncSequence where A: AsyncSequence, B: AsyncSequence {
+public struct CombineLatest1<A, B>: Sendable, AsyncSequence where A: AsyncSequence, B: AsyncSequence, A: Sendable, B: Sendable {
     
     public typealias AsyncIterator = Iterator
     
@@ -213,7 +213,7 @@ func concurrently<A, B>(
     _ a: A,
     _ b: B
 )
--> AsyncThrowingStream<Either<A.Element, B.Element>, Error> where A: AsyncSequence, B: AsyncSequence {
+-> AsyncThrowingStream<Either<A.Element, B.Element>, Error> where A: AsyncSequence & Sendable, B: AsyncSequence & Sendable {
     AsyncThrowingStream { continuation in
         let taskA = Task<Bool, Error> {
             for try await value in a {
@@ -321,5 +321,9 @@ public struct DelayedSequence<Base>: AsyncSequence where Base: AsyncSequence {
         }
         
     }
+    
+}
+
+extension DelayedSequence: Sendable where Base: Sendable {
     
 }

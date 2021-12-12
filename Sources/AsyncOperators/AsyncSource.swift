@@ -19,34 +19,43 @@
 /// Whenever `value` is set, a new element is appended to the sequence.
 ///
 /// This sequence completes when the AsyncSource is deallocated.
-public final class AsyncSource<Element>: AsyncSequence {
+public final class AsyncSource<Element>: Sendable, AsyncSequence {
     
     /// Initializer.
     public init(_ start: Element? = nil) {
-        value = start
+        _value = .init(start)
     }
     
-    /// The element represented by the callee.
-    ///
-    /// Set this to cause a new value to be added to the callee's sequence.
-    public var value: Element? = nil {
-        didSet {
-            if let value = value {
-                var i = 0
-                while i < observers.count {
-                    let observer = observers[i]
-                    if observer.marker == nil {
-                        observers.remove(at: i)
-                    } else {
-                        observer.continuation.yield(value)
-                        i += 1
+    public var value: Element? {
+        get {
+            _value.access { element in
+                element
+            }
+        }
+        set {
+            if let value = newValue {
+                _value.update { element in
+                    element = value
+                    var i = 0
+                    observers.update { observers in
+                        while i < observers.count {
+                            let observer = observers[i]
+                            if observer.marker == nil {
+                                observers.remove(at: i)
+                            } else {
+                                observer.continuation.yield(value)
+                                i += 1
+                            }
+                        }
                     }
                 }
             }
         }
     }
+    
+    private let _value: Locked<Element?>
             
-    private var observers: [Observer] = []
+    private let observers: Locked<[Observer]> = .init([])
         
     private struct Observer {
         
@@ -65,11 +74,14 @@ public final class AsyncSource<Element>: AsyncSequence {
             marker: marker,
             base:
                 AsyncStream<Element> { continuation in
-                    observers.append(.init(
-                        continuation: continuation,
-                        marker: marker
+                    observers.update { observers in
+                        observers.append(
+                            .init(
+                                continuation: continuation,
+                                marker: marker
+                            )
                         )
-                    )
+                    }
                     if let value = value {
                         continuation.yield(value)
                     }
@@ -97,8 +109,10 @@ public final class AsyncSource<Element>: AsyncSequence {
     
     
     deinit {
-        for observer in observers {
-            observer.continuation.finish()
+        observers.access { observers in
+            for observer in observers {
+                observer.continuation.finish()
+            }
         }
     }
     

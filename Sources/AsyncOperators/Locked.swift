@@ -14,10 +14,31 @@
 //  limitations under the License.
 //
 
-import Darwin
+import Foundation
 
-func time() -> UInt64 {
-    // TODO: find a better cross platform way to do this and remove this import. 
-    clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+final class Locked<T>: @unchecked Sendable {
+    
+    init(_ wrapped: T) {
+        self.wrapped = wrapped
+    }
+    
+    private var wrapped: T
+    
+    private var lock = os_unfair_lock_s()
+    
+    func update(_ work: (inout T) -> ()) {
+        os_unfair_lock_lock(&lock)
+        work(&wrapped)
+        os_unfair_lock_unlock(&lock)
+    }
+    
+    func access<U>(_ work: (T) -> (U)) -> U {
+        var current: U
+        os_unfair_lock_lock(&lock)
+        current = work(wrapped)
+        os_unfair_lock_unlock(&lock)
+        return current
+    }
+
+    
 }
-

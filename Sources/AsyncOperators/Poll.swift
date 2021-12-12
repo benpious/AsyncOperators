@@ -20,7 +20,7 @@
 /// until you start enumerating it. 
 ///
 /// - Note: this sequence never terminates.
-public struct Poll: AsyncSequence {
+public struct Poll: AsyncSequence, Sendable {
     
     public typealias AsyncIterator = Iterator
     
